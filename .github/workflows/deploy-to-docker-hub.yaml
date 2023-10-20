@@ -1,0 +1,93 @@
+name: Build and Push Docker Image to Dokcer Hub
+
+on:
+  push:
+    branches:
+      - master
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ${{ github.event.repository.name }}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      - name: list go go-version
+        run: go version
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Build the go project
+        run: go build -o go-cep cmd/main.go 
+
+      - name: Run All unit test
+        run: go test -v ./...
+
+      - name: Run All e2e tests
+        run: go test -v -tags=e2e ./...
+  push_to_registry:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      docker_image_tagged: ${{ steps.vars.outputs.docker_image_tagged }}
+      sha_short: ${{ steps.vars.outputs.sha_short }}
+
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set outputs
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "docker_image_tagged=ismael3s/go-cep:$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        
+      - name: Check outputs
+        run: echo ${{ steps.vars.outputs.sha_short }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ github.event.repository.name }}:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ github.event.repository.name }}:${{ steps.vars.outputs.sha_short }}
+          context: .
+          file: ./Dockerfile
+  update_k8s_deployment_image:
+    needs: push_to_registry
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_IMAGE: ismael3s/go-cep:${{ needs.push_to_registry.outputs.sha_short }}
+
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v3
+        with:
+          ref: master
+          token: ${{ secrets.CI_TOKEN }}
+          repository: ismael3s/k8s
+          
+      - name: Update image deployment
+        run: |
+          wget https://github.com/mikefarah/yq/releases/download/v4.13.5/yq_darwin_amd64.tar.gz -O yq_darwin_amd64.tar.gz && tar -xvf yq_darwin_amd64.tar.gz && chmod +x yq_darwin_amd64 && mv yq_darwin_amd64 yq
+          yq e '.spec.template.spec.containers[0].image = env(DOCKER_IMAGE)' -i go-cep/deployment.yml            
+          rm -f yq yq.1 install-man-page.sh yq_darwin_amd64.tar.gz
+
+      - name: Commit & Push To Master
+        uses: actions-js/push@master
+        with:
+          github_token: ${{ secrets.CI_TOKEN }}
+          repository: ismael3s/k8s
+          branch: master
