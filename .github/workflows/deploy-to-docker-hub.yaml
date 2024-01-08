@@ -76,7 +76,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: master
-          token: ${{ secrets.CI_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           repository: ismael3s/k8s
           
       - name: Update image deployment
@@ -88,6 +88,6 @@ jobs:
       - name: Commit & Push To Master
         uses: actions-js/push@master
         with:
-          github_token: ${{ secrets.CI_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           repository: ismael3s/k8s
           branch: master
