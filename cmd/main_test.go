@@ -16,7 +16,7 @@ import (
 func Test_ShouldReturnAnAddressBased_OnAnCEP(t *testing.T) {
 	ts := httptest.NewServer(rest.SetupRestServer())
 	defer ts.Close()
-	res, err := http.Get(ts.URL + "/cep/40283-310")
+	res, err := http.Get(ts.URL + "/api/v1/cep/40283-310")
 	if err != nil {
 		t.Fatal(err)
 	}
